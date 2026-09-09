@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zero-Trust SRP Demo</title>
+    <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #111827;
+        --accent: #14b8a6;
+        --muted: #94a3b8;
+        --danger: #ef4444;
+        --success: #22c55e;
+        --text: #e5e7eb;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 32px auto;
+        padding: 0 16px;
+      }
+
+      h1 { margin-bottom: 8px; }
+      .subtitle { color: var(--muted); margin-bottom: 24px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 20px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 20px;
+      }
+
+      label {
+        display: block;
+        margin: 12px 0 6px;
+        font-weight: bold;
+      }
+
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(17, 24, 39, 0.9);
+        color: var(--text);
+      }
+
+      button {
+        margin-top: 14px;
+        width: 100%;
+        background: var(--accent);
+        color: #062b2b;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 14px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .status {
+        margin-top: 12px;
+        min-height: 24px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .status.success { color: var(--success); }
+      .status.error { color: var(--danger); }
+
+      .audit-box {
+        margin-top: 24px;
+        background: #0b0f1a;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        color: #dbf3ff;
+        font-size: 12px;
+        line-height: 1.5;
+        min-height: 240px;
+        max-height: 420px;
+        overflow: auto;
+      }
+
+      .tiny-note {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Zero-Trust Authentication - SRP-6a</h1>
+      <div class="subtitle">
+        Prototipo funcional en PHP + Vanilla JS. La contraseña nunca se envía en texto plano al servidor.
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>Registro</h2>
+          <form id="registerForm">
+            <label for="regUser">Usuario</label>
+            <input id="regUser" name="username" required />
+
+            <label for="regPass">Contraseña</label>
+            <input id="regPass" name="password" type="password" required />
+
+            <button type="submit">Registrar credencial SRP</button>
+          </form>
+          <div id="registerStatus" class="status"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Login</h2>
+          <form id="loginForm">
+            <label for="loginUser">Usuario</label>
+            <input id="loginUser" name="username" required />
+
+            <label for="loginPass">Contraseña</label>
+            <input id="loginPass" name="password" type="password" required />
+
+            <button type="submit">Autenticar con SRP</button>
+          </form>
+          <div id="loginStatus" class="status"></div>
+        </section>
+      </div>
+
+      <div class="audit-box">
+        <h2>Consola de Auditoría</h2>
+        <div class="tiny-note">
+          Aquí se imprimen los payloads JSON exactos que salen por <strong>fetch()</strong>. No se envía la contraseña en claro.
+        </div>
+        <pre id="auditConsole"></pre>
+      </div>
+    </div>
+
+    <script>
+      const SRP_N = 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
+      const SRP_G = '02';
+      const SRP_K = '03';
+
+      function bytesToHex(bytes) {
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      }
+
+      function hexToBytes(hex) {
+        const clean = (hex || '').replace(/^0x/i, '').trim();
+        if (clean.length % 2 !== 0) {
+          throw new Error('Hex inválido: longitud impar.');
+        }
+        const out = new Uint8Array(clean.length / 2);
+        for (let i = 0; i < clean.length; i += 2) {
+          out[i / 2] = parseInt(clean.slice(i, i + 2), 16);
+        }
+        return out;
+      }
+
+      async function sha256Hex(inputBytes) {
+        const digest = await crypto.subtle.digest('SHA-256', inputBytes);
+        return bytesToHex(new Uint8Array(digest));
+      }
+
+      async function sha256String(value) {
+        return sha256Hex(new TextEncoder().encode(value));
+      }
+
+      function randomHex(byteLength) {
+        const arr = new Uint8Array(byteLength);
+        crypto.getRandomValues(arr);
+        return bytesToHex(arr);
+      }
+
+      function bigintFromHex(hex) {
+        return BigInt('0x' + String(hex).replace(/^0x/i, ''));
+      }
+
+      function bigintToHex(value) {
+        const hex = value.toString(16);
+        return hex.length % 2 === 0 ? hex : `0${hex}`;
+      }
+
+      function mod(value, modulus) {
+        return ((value % modulus) + modulus) % modulus;
+      }
+
+      function modPow(base, exponent, modulus) {
+        let result = 1n;
+        let b = base % modulus;
+        let e = exponent;
+
+        while (e > 0n) {
+          if (e & 1n) result = (result * b) % modulus;
+          b = (b * b) % modulus;
+          e >>= 1n;
+        }
+
+        return result;
+      }
+
+      async function deriveVerifier(username, password, saltHex) {
+        // Paso SRP-6a: x = H(salt || H(username ':' password))
+        // Luego verifier = g^x mod N.
+        const hashUserPass = await sha256String(`${username}:${password}`);
+        const xHex = await sha256Hex(new Uint8Array([...hexToBytes(saltHex), ...hexToBytes(hashUserPass)]));
+        const x = bigintFromHex(xHex);
+        const g = bigintFromHex(SRP_G);
+        const N = bigintFromHex(SRP_N);
+        return bigintToHex(modPow(g, x, N));
+      }
+
+      async function computeClientSecret(username, password, saltHex, AHex, BHex, a) {
+        const N = bigintFromHex(SRP_N);
+        const g = bigintFromHex(SRP_G);
+        const k = BigInt(SRP_K);
+        const hashUserPass = await sha256String(`${username}:${password}`);
+        const xHex = await sha256Hex(new Uint8Array([...hexToBytes(saltHex), ...hexToBytes(hashUserPass)]));
+        const x = bigintFromHex(xHex);
+        const u = bigintFromHex(await sha256Hex(new Uint8Array([...hexToBytes(AHex), ...hexToBytes(BHex)])));
+        const gX = modPow(g, x, N);
+        const base = mod(bigintFromHex(BHex) - (k * gX), N);
+        const exponent = a + (u * x);
+        return bigintToHex(modPow(base, exponent, N));
+      }
+
+      async function computeClientM1(AHex, BHex, secretHex) {
+        const input = new Uint8Array(
+          hexToBytes(AHex).length + hexToBytes(BHex).length + hexToBytes(secretHex).length
+        );
+
+        let offset = 0;
+        const parts = [hexToBytes(AHex), hexToBytes(BHex), hexToBytes(secretHex)];
+        for (const part of parts) {
+          input.set(part, offset);
+          offset += part.length;
+        }
+
+        return sha256Hex(input);
+      }
+
+      function printAudit(label, payload) {
+        const consoleEl = document.getElementById('auditConsole');
+        const text = consoleEl.textContent || '';
+        consoleEl.textContent = `${text}\n${new Date().toLocaleTimeString()} :: ${label}\n${JSON.stringify(payload, null, 2)}`;
+      }
+
+      function setStatus(id, text, kind = '') {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = 'status';
+        if (kind) el.classList.add(kind);
+      }
+
+      async function registerUser(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const formData = new FormData(form);
+        const username = String(formData.get('username')).trim();
+        const password = String(formData.get('password'));
+
+        if (!username || !password) {
+          setStatus('registerStatus', 'Usuario y contraseña obligatorios.', 'error');
+          return;
+        }
+
+        const saltHex = randomHex(16);
+        const verifierHex = await deriveVerifier(username, password, saltHex);
+        try {
+          const payload = { username, salt: saltHex, verifier: verifierHex };
+          printAudit('REGISTER request', payload);
+
+          const response = await fetch('api.php?action=register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json();
+          printAudit('REGISTER response', result);
+
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Registro fallido.');
+          }
+
+          setStatus('registerStatus', 'Credencial registrada con éxito.', 'success');
+          form.reset();
+        } catch (error) {
+          setStatus('registerStatus', error.message, 'error');
+        }
+      }
+
+      async function loginUser(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const formData = new FormData(form);
+        const username = String(formData.get('username')).trim();
+        const password = String(formData.get('password'));
+
+        if (!username || !password) {
+          setStatus('loginStatus', 'Usuario y contraseña obligatorios.', 'error');
+          return;
+        }
+
+        try {
+          // En SRP-6a, A = g^a mod N. El valor 'a' se genera localmente y jamás sale.
+          const a = bigintFromHex(randomHex(32));
+          const AHex = bigintToHex(modPow(bigintFromHex(SRP_G), a, bigintFromHex(SRP_N)));
+
+          const challengePayload = { username, A: AHex };
+          printAudit('CHALLENGE request', challengePayload);
+
+          const challengeResponse = await fetch('api.php?action=challenge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(challengePayload),
+          });
+
+          const challenge = await challengeResponse.json();
+          printAudit('CHALLENGE response', challenge);
+
+          if (!challengeResponse.ok || !challenge.success) {
+            throw new Error(challenge.error || 'No se pudo iniciar el desafío SRP.');
+          }
+
+          const saltHex = challenge.salt;
+          const BHex = challenge.B;
+          const secretHex = await computeClientSecret(username, password, saltHex, AHex, BHex, a);
+          const M1 = await computeClientM1(AHex, BHex, secretHex);
+
+          const verifyPayload = { username, M1 };
+          printAudit('VERIFY request', verifyPayload);
+
+          const verifyResponse = await fetch('api.php?action=verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(verifyPayload),
+          });
+
+          const verifyResult = await verifyResponse.json();
+          printAudit('VERIFY response', {
+            success: verifyResult.success,
+            message: verifyResult.message,
+          });
+
+          if (!verifyResponse.ok || !verifyResult.success) {
+            throw new Error(verifyResult.error || 'La verificación SRP falló.');
+          }
+
+          setStatus('loginStatus', `Autenticación correcta. Token: ${verifyResult.token}`, 'success');
+          form.reset();
+        } catch (error) {
+          setStatus('loginStatus', error.message, 'error');
+        }
+      }
+
+      document.getElementById('registerForm').addEventListener('submit', registerUser);
+      document.getElementById('loginForm').addEventListener('submit', loginUser);
+      document.getElementById('auditConsole').textContent = 'Consola lista. Los payloads de fetch aparecerán aquí.';
+    </script>
+  </body>
+</html>

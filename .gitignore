@@ -1,0 +1,8 @@
+vendor/
+composer.exe
+composer-setup.php
+*.log
+.env
+.env.*
+!.env.example
+/data/

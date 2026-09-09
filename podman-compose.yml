@@ -1,0 +1,14 @@
+services:
+  srp-demo:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: auth-zero-trust/srp-demo:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - srp-data:/var/www/html/data
+    restart: unless-stopped
+
+volumes:
+  srp-data:

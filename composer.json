@@ -1,0 +1,12 @@
+{
+  "name": "auth-zero-trust/srp-demo",
+  "description": "Prototype de autenticación Zero-Trust con SRP-6a en PHP + JavaScript.",
+  "type": "project",
+  "require": {
+    "phpseclib/phpseclib": "^3.0"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true
+  }
+}

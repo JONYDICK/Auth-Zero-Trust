@@ -1,0 +1,8 @@
+vendor/
+.git/
+.gitignore
+composer.exe
+composer-setup.php
+README.md
+test-flow.js
+*.log
