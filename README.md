@@ -333,18 +333,36 @@ Esto sirve para comprender qué se envía y qué no se envía al servidor.
 
 - PHP 8.2+
 - Composer
+- Node.js 18+ para ejecutar la prueba automática
 - acceso al navegador
 
 ### Instalación de dependencias
+
+Desde la carpeta raíz del proyecto:
 
 ```bash
 composer install
 ```
 
+En Windows con XAMPP, si PHP o Composer no están en el `PATH`, usa sus rutas completas. Por ejemplo:
+
+```powershell
+& 'C:\xampp\php\php.exe' 'C:\ruta\a\composer.phar' install
+```
+
 ### Ejecutar la API en local
+
+Desde `C:\Auth Zero trust`:
 
 ```bash
 php -S 127.0.0.1:8000 -t .
+```
+
+En Windows con XAMPP:
+
+```powershell
+Set-Location 'C:\Auth Zero trust'
+& 'C:\xampp\php\php.exe' -S 127.0.0.1:8000 -t 'C:\Auth Zero trust'
 ```
 
 Luego abre en el navegador:
@@ -352,6 +370,18 @@ Luego abre en el navegador:
 ```text
 http://127.0.0.1:8000/
 ```
+
+Para detener el servidor, pulsa `Ctrl + C` en la terminal donde está ejecutándose.
+
+### Probar el flujo SRP automáticamente
+
+Con el servidor local activo, abre otra terminal en la raíz del proyecto y ejecuta:
+
+```powershell
+node .\test-flow.js
+```
+
+La prueba crea un usuario temporal y valida `register`, `challenge` y `verify`. No utiliza contraseñas ni usuarios preconfigurados.
 
 ### Ejecutar con Podman
 
