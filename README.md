@@ -446,4 +446,3 @@ Este repositorio es un prototipo funcional para aprendizaje y demostración. No 
 - [db.json](db.json): almacenamiento simulado de usuarios
 - [composer.json](composer.json): dependencias del proyecto
 
-Si quieres, en el siguiente paso puedo dejarte también una versión de este README en formato más técnico o más académico, con diagramas de secuencia y una explicación matemática más profunda del cálculo de `x`, `u`, `S` y `M1`.
